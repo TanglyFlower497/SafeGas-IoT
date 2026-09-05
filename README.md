@@ -40,3 +40,5 @@ Projeto IoT para detecção contínua de vazamentos de gás inflamável, envio d
 1. Abra a pasta `dashboard/` e dê duplo clique no arquivo `index.html`.
 2. A página conectará automaticamente ao broker via WebSockets[cite: 1].
 3. O status mudará para **Conectado** e os valores em PPM serão atualizados a cada envio do ESP32[cite: 1].
+### Simulação no Wokwi(ESP32)
+1. https://wokwi.com/projects/474283759267430401
