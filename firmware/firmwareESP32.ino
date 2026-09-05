@@ -2,8 +2,8 @@
 #include <PubSubClient.h>
 
 // ===================== CONFIGURAÇÕES =====================
-const char* ssid = "Wokwi-GUEST";
-const char* password = "";
+const char* ssid = "Wokwi-GUEST"; //Trocar pelo ssid da rede 
+const char* password = ""; //trocr pela senhq da rede
 const char* mqtt_server = "broker.hivemq.com";
 const int   mqtt_port = 1883;
 const char* mqtt_topic = "ifsuldeminas/iot/grupo05/gas";
