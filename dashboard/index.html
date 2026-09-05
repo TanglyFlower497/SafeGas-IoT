@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>SafeGas IoT - Dashboard de Monitoramento</title>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <style>
+    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+    .card { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.1); width: 380px; text-align: center; }
+    h2 { color: #1e293b; margin-bottom: 4px; }
+    h4 { color: #64748b; font-weight: 500; margin-top: 0; }
+    .metric { font-size: 56px; font-weight: bold; color: #10b981; margin: 15px 0; transition: color 0.3s; }
+    .metric.stale { color: #94a3b8; }
+    .alert-danger { color: #ef4444 !important; }
+    .status-box { margin-bottom: 8px; font-size: 14px; font-weight: 600; }
+    .badge { padding: 6px 14px; border-radius: 20px; font-size: 12px; }
+    .online { background: #d1fae5; color: #047857; }
+    .offline { background: #fee2e2; color: #b91c1c; }
+    .stale-badge { background: #fef3c7; color: #92400e; }
+    .alert-banner { display: none; background: #fee2e2; color: #991b1b; padding: 10px; border-radius: 8px; font-weight: bold; margin-bottom: 15px; font-size: 14px; }
+    .error-banner { display: none; background: #fef3c7; color: #92400e; padding: 8px; border-radius: 8px; font-size: 12px; margin-bottom: 15px; }
+    .unit-note { font-size: 11px; color: #94a3b8; margin-top: -8px; margin-bottom: 10px; }
+    .info { margin-top: 15px; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 15px; text-align: left; }
+    .info div { margin-bottom: 4px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <!-- Requisitos: Nome da Empresa e Nome do Produto -->
+    <h2>SafeGas IoT</h2>
+    <h4>GasGuard Pro</h4>
+    <hr style="border: 0; border-top: 1px solid #f1f5f9;">
+
+    <div id="gasAlert" class="alert-banner" role="alert" aria-live="assertive">⚠️ ALERTA: NÍVEL ELEVADO DE GÁS!</div>
+    <div id="errorBanner" class="error-banner" role="status"></div>
+
+    <!-- Requisito: Sensor -->
+    <p><strong>Sensor:</strong> MQ-2 (Gás e Fumaça)</p>
+
+    <!-- Requisitos: Valor Atual e Unidade -->
+    <div class="metric" id="metricVal" aria-live="polite"><span id="val">--</span> <small style="font-size: 18px;">ADC</small></div>
+    <div class="unit-note">Leitura bruta do ADC (0–4095), sem calibração para PPM</div>
+
+    <!-- Requisito: Status da Conexão MQTT -->
+    <div class="status-box">Status MQTT: <span id="status" class="badge offline">Desconectado</span></div>
+
+    <div class="info">
+      <div>Última leitura recebida: <span id="time">--</span></div>
+      <div>Última mensagem do sensor (ts): <span id="deviceTs">--</span></div>
+    </div>
+  </div>
+
+  <script>
+    // ===================== CONFIGURAÇÃO =====================
+    const TOPIC = "ifsuldeminas/iot/grupo05/gas"; // Substitua pelo tópico do seu grupo
+    const BROKER_URL = "wss://broker.hivemq.com:8884/mqtt";
+    const LIMITE_ALERTA = 2000;      // limiar em unidades de ADC bruto (ajuste conforme calibração do MQ2)
+    const TEMPO_DADO_DESATUALIZADO = 10000; // ms sem mensagem nova até considerar "desatualizado"
+
+    const elVal = document.getElementById('val');
+    const elMetric = document.getElementById('metricVal');
+    const elStatus = document.getElementById('status');
+    const elTime = document.getElementById('time');
+    const elDeviceTs = document.getElementById('deviceTs');
+    const elAlertBanner = document.getElementById('gasAlert');
+    const elErrorBanner = document.getElementById('errorBanner');
+
+    let ultimoRecebimento = null;
+    let watchdogInterval = null;
+
+    function mostrarErro(msg) {
+      elErrorBanner.textContent = msg;
+      elErrorBanner.style.display = 'block';
+    }
+
+    function limparErro() {
+      elErrorBanner.style.display = 'none';
+    }
+
+    function marcarDesatualizado(desatualizado) {
+      elMetric.classList.toggle('stale', desatualizado);
+      if (desatualizado) {
+        elStatus.innerText = 'Sem dados recentes';
+        elStatus.className = 'badge stale-badge';
+      }
+    }
+
+    // Verifica periodicamente se o sensor parou de enviar dados
+    // (o MQTT do navegador pode continuar "conectado" mesmo que o ESP32 tenha parado de publicar)
+    function iniciarWatchdog() {
+      if (watchdogInterval) clearInterval(watchdogInterval);
+      watchdogInterval = setInterval(() => {
+        if (ultimoRecebimento && (Date.now() - ultimoRecebimento > TEMPO_DADO_DESATUALIZADO)) {
+          marcarDesatualizado(true);
+        }
+      }, 2000);
+    }
+
+    let client;
+    try {
+      client = mqtt.connect(BROKER_URL, {
+        reconnectPeriod: 3000,   // tenta reconectar a cada 3s se cair
+        connectTimeout: 8000,
+      });
+    } catch (e) {
+      mostrarErro('Não foi possível iniciar a conexão MQTT.');
+    }
+
+    if (client) {
+      client.on('connect', () => {
+        limparErro();
+        elStatus.innerText = 'Conectado';
+        elStatus.className = 'badge online';
+        client.subscribe(TOPIC, (err) => {
+          if (err) {
+            mostrarErro('Falha ao se inscrever no tópico do sensor.');
+          }
+        });
+        iniciarWatchdog();
+      });
+
+      client.on('reconnect', () => {
+        elStatus.innerText = 'Reconectando...';
+        elStatus.className = 'badge offline';
+      });
+
+      client.on('offline', () => {
+        elStatus.innerText = 'Desconectado';
+        elStatus.className = 'badge offline';
+      });
+
+      client.on('error', (err) => {
+        mostrarErro('Erro de conexão MQTT: ' + (err && err.message ? err.message : 'desconhecido'));
+      });
+
+      client.on('message', (topic, payload) => {
+        limparErro();
+        ultimoRecebimento = Date.now();
+        marcarDesatualizado(false);
+        // se estava "desatualizado", volta a mostrar como conectado
+        if (client.connected) {
+          elStatus.innerText = 'Conectado';
+          elStatus.className = 'badge online';
+        }
+
+        let dados;
+        try {
+          // formato esperado do ESP32: {"gas":512,"ts":123456}
+          dados = JSON.parse(payload.toString());
+        } catch (e) {
+          mostrarErro('Mensagem recebida em formato inesperado.');
+          return;
+        }
+
+        const valor = Number(dados.gas);
+        if (Number.isNaN(valor)) {
+          mostrarErro('Valor de gás inválido recebido.');
+          return;
+        }
+
+        elVal.innerText = valor;
+        elTime.innerText = new Date().toLocaleTimeString();
+        elDeviceTs.innerText = (dados.ts !== undefined) ? dados.ts : '--';
+
+        // Alerta visual caso a leitura supere o limiar configurado.
+        // OBS: como o valor ainda é bruto do ADC (não calibrado em PPM),
+        // este limiar é apenas relativo e deve ser ajustado empiricamente.
+        if (valor > LIMITE_ALERTA) {
+          elMetric.classList.add('alert-danger');
+          elAlertBanner.style.display = 'block';
+        } else {
+          elMetric.classList.remove('alert-danger');
+          elAlertBanner.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
