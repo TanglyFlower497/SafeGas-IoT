@@ -11,7 +11,7 @@ Projeto IoT para detecção contínua de vazamentos de gás inflamável, envio d
 * **Sensor:** MQ-2 / MQ-5 (Gás / Fumaça)[cite: 1]
 * **Métrica / Unidade:** Concentração em PPM (Partes Por Milhão)[cite: 1]
 * **Broker MQTT:** `broker.hivemq.com` (Porta WebSockets: `8884` / TCP: `1883`)[cite: 1]
-* **Tópico MQTT:** `ifsuldeminas/iot/grupo01/gas`[cite: 1]
+* **Tópico MQTT:** `ifsuldeminas/iot/grupo05/gas`[cite: 1]
 
 ---
 
